@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenVideoSmartShare/OpenVideoSmartShare.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenVideoSmartShare.Tests/OpenVideoSmartShare.Tests.csproj" />
+  </Folder>
+</Solution>

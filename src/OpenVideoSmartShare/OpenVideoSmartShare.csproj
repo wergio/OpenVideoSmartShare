@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>OpenVideoSmartShare</AssemblyName>
+    <RootNamespace>OpenVideoSmartShare</RootNamespace>
+    <!-- Release builds override it with the tag: tools\publish.ps1 -Version 1.2.0 -->
+    <Version>1.0.0</Version>
+    <Product>OpenVideoSmartShare</Product>
+    <Authors>Daniele Vergini</Authors>
+    <Copyright>Copyright (c) 2026 Daniele Vergini</Copyright>
+    <Description>Server DLNA video e lancio dei video sulla TV</Description>
+    <RepositoryUrl>https://github.com/wergio/OpenVideoSmartShare</RepositoryUrl>
+    <!-- Keep ProductVersion equal to Version (no "+commit" suffix): the installer and code signing read it. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Run on a newer .NET major when 10 is not installed. -->
+    <RollForward>Major</RollForward>
+    <SatelliteResourceLanguages>it</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Kestrel hosts the DLNA HTTP endpoints without needing an http.sys URL ACL. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\app.ico" LogicalName="OpenVideoSmartShare.app.ico" />
+    <EmbeddedResource Include="Localization\Languages\*.json" LogicalName="OpenVideoSmartShare.Localization.Languages.%(Filename).json" WithCulture="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVideoSmartShare.Tests" />
+  </ItemGroup>
+
+</Project>

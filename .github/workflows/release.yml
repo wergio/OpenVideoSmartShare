@@ -1,0 +1,136 @@
+# Pushing a tag vX.Y.Z (or vX.Y.Z-suffix for a pre-release) builds, tests and publishes a
+# GitHub release with the installer, the portable exe and their SHA-256 checksums.
+# Code signing through SignPath runs only when the SIGNPATH_* repository variables are set
+# (see docs/code-signing-setup.md).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  INNO_SETUP_VERSION: 7.1.0
+  INNO_SETUP_SHA256: 0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TAG: ${{ github.ref_name }}
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          if ($env:TAG -notmatch '^v(\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$') {
+              throw "Tag $env:TAG is not vX.Y.Z or vX.Y.Z-suffix"
+          }
+          "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish the exe
+        run: tools/publish.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - name: Upload the unsigned exe
+        if: env.SIGN == 'true'
+        id: unsigned-exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-exe
+          path: dist/OpenVideoSmartShare.exe
+
+      - name: Sign the exe
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          # Every signing request waits for a manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/exe
+
+      - name: Use the signed exe
+        if: env.SIGN == 'true'
+        run: Copy-Item signed/exe/OpenVideoSmartShare.exe dist/ -Force
+
+      - name: Install Inno Setup
+        run: |
+          $tag = 'is-' + $env:INNO_SETUP_VERSION.Replace('.', '_')
+          $setup = Join-Path $env:RUNNER_TEMP "innosetup-$env:INNO_SETUP_VERSION-x64.exe"
+          Invoke-WebRequest "https://github.com/jrsoftware/issrc/releases/download/$tag/innosetup-$env:INNO_SETUP_VERSION-x64.exe" -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne $env:INNO_SETUP_SHA256) {
+              throw "The Inno Setup download does not match the expected SHA-256"
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'InnoSetup'
+          Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=`"$dir`"" -Wait
+          "ISCC=$dir\ISCC.exe" >> $env:GITHUB_ENV
+
+      - name: Build the installer
+        run: tools/build-installer.ps1
+
+      - name: Upload the unsigned installer
+        if: env.SIGN == 'true'
+        id: unsigned-installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          path: dist/OpenVideoSmartShare-Setup-${{ steps.version.outputs.version }}.exe
+
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed/installer
+
+      - name: Use the signed installer
+        if: env.SIGN == 'true'
+        run: Copy-Item signed/installer/*.exe dist/ -Force
+
+      - name: Compute the checksums
+        run: |
+          $lines = Get-ChildItem dist -Filter *.exe | Sort-Object Name | ForEach-Object {
+              "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD 'dist/SHA256SUMS.txt'), ($lines -join "`n") + "`n")
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $assets = @(
+              "dist/OpenVideoSmartShare-Setup-$env:VERSION.exe",
+              'dist/OpenVideoSmartShare.exe',
+              'dist/SHA256SUMS.txt'
+          )
+          $options = @('--title', "OpenVideoSmartShare $env:VERSION", '--notes-file', '.github/release-notes.md', '--generate-notes')
+          if ($env:VERSION.Contains('-')) { $options += '--prerelease' }
+          gh release create $env:TAG @assets @options
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
