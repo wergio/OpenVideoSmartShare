@@ -31,6 +31,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\app.ico" LogicalName="OpenVideoSmartShare.app.ico" />
+    <EmbeddedResource Include="Assets\tray-white.ico" LogicalName="OpenVideoSmartShare.tray-white.ico" />
+    <EmbeddedResource Include="Assets\tray-black.ico" LogicalName="OpenVideoSmartShare.tray-black.ico" />
     <EmbeddedResource Include="Localization\Languages\*.json" LogicalName="OpenVideoSmartShare.Localization.Languages.%(Filename).json" WithCulture="false" />
   </ItemGroup>
 

@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using OpenVideoSmartShare.Infrastructure;
 using OpenVideoSmartShare.Localization;
 
@@ -15,6 +16,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly RegisteredWaitHandle _showWait;
     private readonly RegisteredWaitHandle _exitWait;
     private bool _exiting;
+    private bool _lightTaskbar;
 
     public TrayApplicationContext(AppHost host, EventWaitHandle showRequested, EventWaitHandle exitRequested, bool startHidden)
     {
@@ -28,7 +30,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _exitItem.Click += async (_, _) => await ExitAsync();
         _menu.Items.AddRange([_openItem, new ToolStripSeparator(), _exitItem]);
 
-        _tray.Icon = AppIcon.Create(SystemInformation.SmallIconSize.Width);
+        _lightTaskbar = AppIcon.TaskbarUsesLightTheme();
+        _tray.Icon = AppIcon.CreateTray(SystemInformation.SmallIconSize.Width, _lightTaskbar);
         _tray.Text = AppPaths.AppName;
         _tray.ContextMenuStrip = _menu;
         _tray.MouseClick += (_, e) =>
@@ -48,6 +51,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             (_, _) => _mainForm.BeginInvoke(async () => await ExitAsync()), null, Timeout.Infinite, executeOnlyOnce: true);
 
         L.LanguageChanged += OnLanguageChanged;
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         ApplyTexts();
 
         if (!startHidden)
@@ -63,6 +67,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             L.LanguageChanged -= OnLanguageChanged;
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _showWait.Unregister(null);
             _exitWait.Unregister(null);
             _tray.Dispose();
@@ -112,6 +117,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private void OnLanguageChanged(object? sender, EventArgs e) => ApplyTexts();
+
+    // Switching between light and dark mode recolours the taskbar: swap the glyph like the system icons do.
+    private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        var lightTaskbar = AppIcon.TaskbarUsesLightTheme();
+        if (lightTaskbar == _lightTaskbar)
+        {
+            return;
+        }
+
+        _lightTaskbar = lightTaskbar;
+        var previous = _tray.Icon;
+        _tray.Icon = AppIcon.CreateTray(SystemInformation.SmallIconSize.Width, lightTaskbar);
+        previous?.Dispose();
+    }
 
     private void ApplyTexts()
     {
