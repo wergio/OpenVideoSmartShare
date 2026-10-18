@@ -88,6 +88,25 @@ internal sealed class AppHost : IAsyncDisposable
         return clients.Count == 0 ? [] : Renderers.Renderers.Where(r => clients.Contains(r.Address)).ToList();
     }
 
+    /// <summary>TVs offered for playback: blocked ones are left out, known offline ones included.</summary>
+    public IReadOnlyList<PlayTarget> PlayTargets()
+    {
+        var online = Renderers.Renderers;
+        return Settings.Read(s => DeviceAccess.PlayTargets(online, s.Devices));
+    }
+
+    public async Task PauseAsync(RendererInfo renderer)
+    {
+        Log.Info($"Pause on {renderer.FriendlyName}");
+        await Transport.PauseAsync(renderer).ConfigureAwait(false);
+    }
+
+    public async Task ResumeAsync(RendererInfo renderer)
+    {
+        Log.Info($"Resume on {renderer.FriendlyName}");
+        await Transport.ResumeAsync(renderer).ConfigureAwait(false);
+    }
+
     /// <summary>Stops playback on a renderer.</summary>
     public async Task StopAsync(RendererInfo renderer)
     {
@@ -112,14 +131,13 @@ internal sealed class AppHost : IAsyncDisposable
             s.StartWithWindows = edited.StartWithWindows;
             s.DefaultRendererUdn = edited.DefaultRendererUdn;
             s.DefaultRendererName = edited.DefaultRendererName;
-            s.Devices = edited.Devices.Select(d => new DeviceRule
+            // Only the choice comes from the dialog: address, name and TV may have been
+            // refreshed since it opened.
+            s.Devices = edited.Devices.Select(d =>
             {
-                Key = d.Key,
-                Name = d.Name,
-                MacAddress = d.MacAddress,
-                LastIp = d.LastIp,
-                Allowed = d.Allowed,
-                LastSeen = d.LastSeen,
+                var device = (s.Devices.FirstOrDefault(live => live.Key == d.Key) ?? d).Clone();
+                device.Allowed = d.Allowed;
+                return device;
             }).ToList();
         });
 
@@ -165,7 +183,7 @@ internal sealed class AppHost : IAsyncDisposable
         {
             if (!renderer.Address.Equals(System.Net.IPAddress.None))
             {
-                Access.Observe(renderer.Address, renderer.FriendlyName, preferName: true);
+                Access.Observe(renderer.Address, renderer.FriendlyName, preferName: true, renderer.Udn);
             }
         }
     }

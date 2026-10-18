@@ -1,5 +1,5 @@
-using System.Globalization;
 using OpenVideoSmartShare.Library;
+using OpenVideoSmartShare.Localization;
 
 namespace OpenVideoSmartShare.Ui;
 
@@ -133,7 +133,7 @@ internal sealed class VideoListView : ListView
         row.SubItems.Add(SubtitleText(item));
         row.SubItems.Add(FormatSize(item.Size));
         row.SubItems.Add(ResolutionText(item));
-        row.SubItems.Add(item.Modified.ToString("d", CultureInfo.CurrentCulture));
+        row.SubItems.Add(item.Modified.ToString("d", L.Culture));
         row.SubItems.Add(item.FolderPath);
         _rows[item.Id] = row;
         return row;
@@ -169,7 +169,7 @@ internal sealed class VideoListView : ListView
             unit++;
         }
 
-        return unit == 0 ? $"{bytes} B" : value.ToString(value < 10 ? "0.00" : value < 100 ? "0.0" : "0", CultureInfo.CurrentCulture) + " " + units[unit];
+        return unit == 0 ? $"{bytes} B" : value.ToString(value < 10 ? "0.00" : value < 100 ? "0.0" : "0", L.Culture) + " " + units[unit];
     }
 
     private sealed class RowComparer(VideoColumn column, bool descending) : System.Collections.IComparer

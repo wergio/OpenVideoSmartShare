@@ -22,6 +22,9 @@ internal sealed class RendererInfo
 
     public required Uri AvTransportControl { get; init; }
 
+    /// <summary>RenderingControl service (volume), when the renderer has one.</summary>
+    public Uri? RenderingControl { get; init; }
+
     public DateTime LastSeen { get; set; }
 
     public int MaxAgeSeconds { get; set; } = 1800;
@@ -188,9 +191,11 @@ internal sealed class RendererRegistry : IDisposable
             return null;
         }
 
-        var avTransport = device.Element(DeviceNs + "serviceList")?.Elements(DeviceNs + "service")
-            .FirstOrDefault(s => (s.Element(DeviceNs + "serviceType")?.Value ?? "").Contains(":AVTransport:", StringComparison.OrdinalIgnoreCase));
-        var control = avTransport?.Element(DeviceNs + "controlURL")?.Value?.Trim();
+        string? ControlUrl(string service) => device.Element(DeviceNs + "serviceList")?.Elements(DeviceNs + "service")
+            .FirstOrDefault(s => (s.Element(DeviceNs + "serviceType")?.Value ?? "").Contains($":{service}:", StringComparison.OrdinalIgnoreCase))
+            ?.Element(DeviceNs + "controlURL")?.Value?.Trim();
+        var control = ControlUrl("AVTransport");
+        var renderingControl = ControlUrl("RenderingControl");
         var udn = device.Element(DeviceNs + "UDN")?.Value?.Trim();
         if (string.IsNullOrEmpty(control) || string.IsNullOrEmpty(udn))
         {
@@ -206,6 +211,7 @@ internal sealed class RendererRegistry : IDisposable
             Location = location,
             Address = IPAddress.TryParse(location.Host, out var address) ? address : IPAddress.None,
             AvTransportControl = new Uri(baseUri, control),
+            RenderingControl = string.IsNullOrEmpty(renderingControl) ? null : new Uri(baseUri, renderingControl),
         };
     }
 }

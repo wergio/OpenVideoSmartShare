@@ -44,6 +44,7 @@ internal static class L
     ];
 
     private static readonly object Gate = new();
+    private static readonly CultureInfo RegionalCulture = CultureInfo.CurrentCulture;
     private static Dictionary<string, string> _fallback = new(StringComparer.Ordinal);
     private static Dictionary<string, string> _current = new(StringComparer.Ordinal);
 
@@ -52,6 +53,12 @@ internal static class L
 
     /// <summary>Effective language code (never "auto").</summary>
     public static string CurrentCode { get; private set; } = Fallback;
+
+    /// <summary>
+    /// Formats for dates and numbers: the Windows regional format when it is in the UI language
+    /// (e.g. it-CH for Italian), otherwise the language's own.
+    /// </summary>
+    public static CultureInfo Culture { get; private set; } = CultureInfo.CurrentCulture;
 
     /// <summary>Applies a language setting: a supported code or <see cref="AutoLanguage"/>.</summary>
     public static void SetLanguage(string? setting)
@@ -66,6 +73,7 @@ internal static class L
 
             _current = code == Fallback ? _fallback : Load(code);
             CurrentCode = code;
+            Culture = CultureFor(code, RegionalCulture);
         }
 
         LanguageChanged?.Invoke(null, EventArgs.Empty);
@@ -87,7 +95,7 @@ internal static class L
 
     /// <summary>Returns the translated composite format filled with <paramref name="args"/>.</summary>
     public static string F(string key, params object?[] args) =>
-        string.Format(CultureInfo.CurrentCulture, T(key), args);
+        string.Format(Culture, T(key), args);
 
     /// <summary>Maps a language setting to a supported code, using the OS language for "auto".</summary>
     internal static string Resolve(string? setting, CultureInfo systemCulture)
@@ -103,6 +111,9 @@ internal static class L
 
         return FromCulture(systemCulture);
     }
+
+    internal static CultureInfo CultureFor(string code, CultureInfo regional) =>
+        FromCulture(regional) == code ? regional : CultureInfo.GetCultureInfo(code);
 
     internal static string FromCulture(CultureInfo culture)
     {

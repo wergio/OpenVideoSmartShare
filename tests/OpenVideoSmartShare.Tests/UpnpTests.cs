@@ -99,6 +99,10 @@ public class UpnpTests
                     <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
                     <controlURL>/AVTransport/eee34e06-32db-5959-0731-9fb6420e56b3/control.xml</controlURL>
                   </service>
+                  <service>
+                    <serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+                    <controlURL>/RenderingControl/eee34e06-32db-5959-0731-9fb6420e56b3/control.xml</controlURL>
+                  </service>
                 </serviceList>
               </device>
             </root>
@@ -109,5 +113,7 @@ public class UpnpTests
         Assert.Equal("192.168.1.142", renderer.Address.ToString());
         Assert.Equal("http://192.168.1.142:1754/AVTransport/eee34e06-32db-5959-0731-9fb6420e56b3/control.xml",
             renderer.AvTransportControl.ToString());
+        Assert.Equal("http://192.168.1.142:1754/RenderingControl/eee34e06-32db-5959-0731-9fb6420e56b3/control.xml",
+            renderer.RenderingControl?.ToString());
     }
 }

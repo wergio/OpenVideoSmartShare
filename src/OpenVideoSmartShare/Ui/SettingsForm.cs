@@ -1,4 +1,4 @@
-using System.Globalization;
+using OpenVideoSmartShare.Devices;
 using OpenVideoSmartShare.Infrastructure;
 using OpenVideoSmartShare.Library;
 using OpenVideoSmartShare.Localization;
@@ -17,7 +17,7 @@ internal sealed class SettingsForm : Form
 
     private readonly AppHost _host;
     private readonly AppSettings _edited;
-    private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
+    private readonly CardTabControl _tabs = new() { Dock = DockStyle.Fill };
 
     private readonly ListView _folders = NewListView(checkBoxes: false);
     private readonly CheckBox _includeSubfolders = new() { AutoSize = true };
@@ -46,6 +46,8 @@ internal sealed class SettingsForm : Form
     private readonly Button _blockAll = new() { AutoSize = true };
     private readonly Button _removeDevice = new() { AutoSize = true };
     private readonly Label _accessHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText };
+    // Presence also ends when a device stops contacting the server, which raises no event.
+    private readonly System.Windows.Forms.Timer _presenceTimer = new() { Interval = 15000 };
 
     private readonly Button _ok = new() { AutoSize = true, MinimumSize = new Size(90, 0) };
     private readonly Button _cancel = new() { AutoSize = true, MinimumSize = new Size(90, 0), DialogResult = DialogResult.Cancel };
@@ -53,7 +55,6 @@ internal sealed class SettingsForm : Form
 
     private bool _loadingDevices;
     private bool _loadingDefaultTv;
-    private bool _dirty;
 
     public SettingsForm(AppHost host)
     {
@@ -64,7 +65,7 @@ internal sealed class SettingsForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Icon = AppIcon.Create();
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(820, 560);
+        Size = new Size(900, 560);
         MinimumSize = new Size(620, 420);
         ShowInTaskbar = false;
         MinimizeBox = false;
@@ -88,8 +89,9 @@ internal sealed class SettingsForm : Form
         Controls.Add(buttons);
         ResumeLayout(false);
         PerformLayout();
+        _tabs.ScalePadding(14, 5);
         ScaleColumns(_folders, 480, 170);
-        ScaleColumns(_devices, 260, 120, 150, 110);
+        ScaleColumns(_devices, 220, 105, 135, 95, 110);
         _folders.KeepLastColumnFilled();
         _devices.KeepLastColumnFilled();
 
@@ -107,11 +109,13 @@ internal sealed class SettingsForm : Form
         LoadValues();
         _host.Access.DevicesChanged += OnDevicesChanged;
         _host.Renderers.Changed += OnRenderersChanged;
+        _presenceTimer.Tick += (_, _) => UpdatePresence();
+        _presenceTimer.Start();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (DialogResult != DialogResult.OK && _dirty)
+        if (DialogResult != DialogResult.OK && HasChanges())
         {
             var answer = MessageBox.Show(this, L.T("settings.saveChanges"), Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
             if (answer == DialogResult.Cancel || (answer == DialogResult.Yes && !Save()))
@@ -123,6 +127,7 @@ internal sealed class SettingsForm : Form
 
         _host.Access.DevicesChanged -= OnDevicesChanged;
         _host.Renderers.Changed -= OnRenderersChanged;
+        _presenceTimer.Dispose();
         base.OnFormClosing(e);
     }
 
@@ -189,7 +194,6 @@ internal sealed class SettingsForm : Form
 
             await RefreshFirewallStateAsync();
         };
-        _name.TextChanged += (_, _) => _dirty = true;
         return page;
     }
 
@@ -202,9 +206,6 @@ internal sealed class SettingsForm : Form
         grid.Controls.Add(Spacer());
         grid.Controls.Add(_startWithWindows);
         page.Controls.Add(grid);
-
-        _language.SelectedIndexChanged += (_, _) => _dirty = true;
-        _startWithWindows.CheckedChanged += (_, _) => _dirty = true;
         return page;
     }
 
@@ -222,6 +223,7 @@ internal sealed class SettingsForm : Form
         _devices.Columns.Add("", 260);
         _devices.Columns.Add("", 120);
         _devices.Columns.Add("", 150);
+        _devices.Columns.Add("", 110);
         _devices.Columns.Add("", 110);
         _devices.ItemChecked += (_, e) => OnDeviceChecked(e.Item);
         _devices.SelectedIndexChanged += (_, _) => _removeDevice.Enabled = _devices.SelectedItems.Count > 0;
@@ -274,6 +276,7 @@ internal sealed class SettingsForm : Form
         _devices.Columns[1].Text = L.T("settings.colIp");
         _devices.Columns[2].Text = L.T("settings.colMac");
         _devices.Columns[3].Text = L.T("settings.colStatus");
+        _devices.Columns[4].Text = L.T("settings.colPresence");
         _allowAll.Text = L.T("settings.allowAll");
         _blockAll.Text = L.T("settings.blockAll");
         _removeDevice.Text = L.T("settings.remove");
@@ -302,18 +305,48 @@ internal sealed class SettingsForm : Form
         ReloadDefaultTvOptions();
         ReloadDevices();
         _ = RefreshFirewallStateAsync();
-        _dirty = false;
     }
 
-    /// <summary>"(none)", the TVs found on the network and the saved default TV if it is offline.</summary>
+    /// <summary>
+    /// Compares with the saved settings instead of tracking edits: controls raise change
+    /// events on their own, e.g. a list view reports its checked items when first shown.
+    /// </summary>
+    private bool HasChanges()
+    {
+        var saved = _host.Settings.Snapshot();
+        return ChangeKey(saved, saved.ServerName, saved.Language, saved.StartWithWindows)
+               != ChangeKey(_edited, _name.Text.Trim(), (_language.SelectedItem as LanguageChoice)?.Code ?? L.AutoLanguage, _startWithWindows.Checked);
+    }
+
+    private static string ChangeKey(AppSettings s, string name, string language, bool startWithWindows) => string.Join("\n",
+        name,
+        language,
+        startWithWindows,
+        s.DefaultRendererUdn,
+        string.Join("|", s.SharedFolders.Select(f => $"{f.Path}*{f.IncludeSubfolders}")),
+        string.Join("|", s.Devices.Select(d => $"{d.Key}*{d.Allowed}").Order(StringComparer.Ordinal)));
+
+    /// <summary>
+    /// "(none)" and the TVs that are not blocked in the list below, as edited: online, known
+    /// offline, and the saved default TV even if it is unknown. Blocking the default TV clears it.
+    /// </summary>
     private void ReloadDefaultTvOptions()
     {
+        var online = _host.Renderers.Renderers;
         var options = new List<DefaultTvChoice> { new(null, L.T("settings.defaultTvNone")) };
-        options.AddRange(_host.Renderers.Renderers.Select(r => new DefaultTvChoice(r.Udn, r.FriendlyName)));
-        if (_edited.DefaultRendererUdn != null && options.All(o => o.Udn != _edited.DefaultRendererUdn))
+        options.AddRange(DeviceAccess.PlayTargets(online, _edited.Devices)
+            .Select(t => new DefaultTvChoice(t.Udn, t.Renderer != null ? t.Name : t.Name + "  " + L.T("main.notFound"))));
+        if (_edited.DefaultRendererUdn is { } udn && options.All(o => o.Udn != udn))
         {
-            options.Add(new DefaultTvChoice(_edited.DefaultRendererUdn,
-                (_edited.DefaultRendererName ?? _edited.DefaultRendererUdn) + "  " + L.T("main.notFound")));
+            if (DeviceAccess.IsBlocked(udn, online, _edited.Devices))
+            {
+                _edited.DefaultRendererUdn = null;
+                _edited.DefaultRendererName = null;
+            }
+            else
+            {
+                options.Add(new DefaultTvChoice(udn, (_edited.DefaultRendererName ?? udn) + "  " + L.T("main.notFound")));
+            }
         }
 
         _loadingDefaultTv = true;
@@ -338,15 +371,20 @@ internal sealed class SettingsForm : Form
 
         _edited.DefaultRendererUdn = choice.Udn;
         _edited.DefaultRendererName = choice.Udn == null ? null
-            : _host.Renderers.Find(choice.Udn)?.FriendlyName ?? _edited.DefaultRendererName;
-        _dirty = true;
+            : _host.Renderers.Find(choice.Udn)?.FriendlyName
+              ?? _edited.Devices.FirstOrDefault(d => d.RendererUdn == choice.Udn)?.Name
+              ?? _edited.DefaultRendererName;
     }
 
     private void OnRenderersChanged(object? sender, EventArgs e)
     {
         if (IsHandleCreated)
         {
-            BeginInvoke(ReloadDefaultTvOptions);
+            BeginInvoke(() =>
+            {
+                ReloadDefaultTvOptions();
+                UpdatePresence();
+            });
         }
     }
 
@@ -411,7 +449,6 @@ internal sealed class SettingsForm : Form
         }
 
         folder.IncludeSubfolders = _includeSubfolders.Checked;
-        _dirty = true;
         ReloadFolders();
     }
 
@@ -442,7 +479,6 @@ internal sealed class SettingsForm : Form
         }
 
         _edited.SharedFolders.Add(new SharedFolder { Path = path, IncludeSubfolders = true });
-        _dirty = true;
         ReloadFolders();
         _folders.Items[^1].Selected = true;
     }
@@ -457,7 +493,6 @@ internal sealed class SettingsForm : Form
         }
 
         _edited.SharedFolders.Remove(folder);
-        _dirty = true;
         ReloadFolders();
     }
 
@@ -472,25 +507,15 @@ internal sealed class SettingsForm : Form
         {
             // Merge newly seen devices without losing unsaved edits.
             var known = _edited.Devices.Select(d => d.Key).ToHashSet();
-            foreach (var device in _host.Settings.Read(s => s.Devices.Where(d => !known.Contains(d.Key)).ToList()))
-            {
-                _edited.Devices.Add(new DeviceRule
-                {
-                    Key = device.Key,
-                    Name = device.Name,
-                    MacAddress = device.MacAddress,
-                    LastIp = device.LastIp,
-                    Allowed = device.Allowed,
-                    LastSeen = device.LastSeen,
-                });
-            }
-
+            _edited.Devices.AddRange(_host.Settings.Read(s => s.Devices.Where(d => !known.Contains(d.Key)).Select(d => d.Clone()).ToList()));
             ReloadDevices();
+            ReloadDefaultTvOptions();
         });
     }
 
     private void ReloadDevices()
     {
+        var online = _host.Renderers.Renderers;
         _loadingDevices = true;
         _devices.BeginUpdate();
         try
@@ -502,7 +527,8 @@ internal sealed class SettingsForm : Form
                 item.SubItems.Add(device.LastIp ?? "");
                 item.SubItems.Add(device.MacAddress ?? "");
                 item.SubItems.Add(device.Allowed ? L.T("settings.allowed") : L.T("settings.blocked"));
-                item.ToolTipText = device.LastSeen == default ? "" : device.LastSeen.ToString("g", CultureInfo.CurrentCulture);
+                item.SubItems.Add(PresenceText(device, online));
+                item.ToolTipText = device.LastSeen == default ? "" : device.LastSeen.ToString("g", L.Culture);
                 _devices.Items.Add(item);
             }
         }
@@ -515,16 +541,37 @@ internal sealed class SettingsForm : Form
         _removeDevice.Enabled = _devices.SelectedItems.Count > 0;
     }
 
+    private void UpdatePresence()
+    {
+        var online = _host.Renderers.Renderers;
+        foreach (ListViewItem item in _devices.Items)
+        {
+            if (item.Tag is DeviceRule device)
+            {
+                var text = PresenceText(device, online);
+                if (item.SubItems[4].Text != text)
+                {
+                    item.SubItems[4].Text = text;
+                }
+            }
+        }
+    }
+
+    /// <summary>Present or not for TVs; devices that only browse the server are not TVs.</summary>
+    private string PresenceText(DeviceRule device, IReadOnlyList<RendererInfo> online) =>
+        L.T(!DeviceAccess.IsTv(device, online, _edited.Devices) ? "settings.notTv"
+            : _host.Access.IsPresent(device, online, _edited.Devices) ? "settings.present" : "settings.absent");
+
     private void OnDeviceChecked(ListViewItem item)
     {
-        if (_loadingDevices || item.Tag is not DeviceRule device)
+        if (_loadingDevices || item.Tag is not DeviceRule device || device.Allowed == item.Checked)
         {
             return;
         }
 
         device.Allowed = item.Checked;
         item.SubItems[3].Text = device.Allowed ? L.T("settings.allowed") : L.T("settings.blocked");
-        _dirty = true;
+        ReloadDefaultTvOptions();
     }
 
     private void SetAllDevices(bool allowed)
@@ -534,8 +581,8 @@ internal sealed class SettingsForm : Form
             device.Allowed = allowed;
         }
 
-        _dirty = true;
         ReloadDevices();
+        ReloadDefaultTvOptions();
     }
 
     private void RemoveDevice()
@@ -546,8 +593,8 @@ internal sealed class SettingsForm : Form
         }
 
         _edited.Devices.Remove(device);
-        _dirty = true;
         ReloadDevices();
+        ReloadDefaultTvOptions();
     }
 
     private bool Save()
@@ -569,7 +616,6 @@ internal sealed class SettingsForm : Form
         ReloadFolders();
         ReloadDefaultTvOptions();
         ReloadDevices();
-        _dirty = false;
         return true;
     }
 

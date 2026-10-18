@@ -27,6 +27,18 @@ public class LocalizationTests
         Assert.Equal("fr", L.Resolve("fr", CultureInfo.GetCultureInfo("it-IT")));
     }
 
+    [Theory]
+    [InlineData("it", "en-US", "it", "18/10/2026")]
+    [InlineData("it", "it-CH", "it-CH", "18.10.2026")]
+    [InlineData("en", "it-IT", "en", "10/18/2026")]
+    [InlineData("de", "en-GB", "de", "18.10.2026")]
+    public void DatesFollowTheUiLanguage(string code, string regional, string expected, string date)
+    {
+        var culture = L.CultureFor(code, CultureInfo.GetCultureInfo(regional));
+        Assert.Equal(expected, culture.Name);
+        Assert.Equal(date, new DateTime(2026, 10, 18).ToString("d", culture));
+    }
+
     [Fact]
     public void EveryLanguageTranslatesEveryKey()
     {

@@ -22,6 +22,11 @@ internal sealed class DeviceRule
     public bool Allowed { get; set; } = true;
 
     public DateTime LastSeen { get; set; }
+
+    /// <summary>UDN of the TV (MediaRenderer) on this device, so that it can be listed while offline.</summary>
+    public string? RendererUdn { get; set; }
+
+    public DeviceRule Clone() => (DeviceRule)MemberwiseClone();
 }
 
 /// <summary>Persisted user settings.</summary>
