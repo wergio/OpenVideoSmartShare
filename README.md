@@ -2,7 +2,11 @@
 
 A small Windows tray application that shares your video folders as a DLNA server and streams videos to an LG TV (or any DLNA renderer).
 
-Made as a replacement for LG SmartShare, which I believe is no longer maintained.
+Made as a replacement for LG SmartShare, which I believe is no longer maintained. I was using it as a simple way to play videos on my TV; this is even simpler :wink:
+
+![OpenVideoSmartShare main window: the shared videos with duration, subtitles, size, resolution, date and folder, and the TV to play them on](docs/screenshots/main-window.png)
+
+![OpenVideoSmartShare during playback: Pause, Stop, Mute and volume controls for the TV that is playing](docs/screenshots/main-window-playing.png)
 
 ## Features
 
