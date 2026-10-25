@@ -11,7 +11,7 @@
     <AssemblyName>OpenVideoSmartShare</AssemblyName>
     <RootNamespace>OpenVideoSmartShare</RootNamespace>
     <!-- Release builds override it with the tag: tools\publish.ps1 -Version 1.2.0 -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>OpenVideoSmartShare</Product>
     <Authors>Daniele Vergini</Authors>
     <Copyright>Copyright (c) 2026 Daniele Vergini</Copyright>
