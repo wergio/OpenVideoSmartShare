@@ -130,7 +130,16 @@ jobs:
               'dist/OpenVideoSmartShare.exe',
               'dist/SHA256SUMS.txt'
           )
-          $options = @('--title', "OpenVideoSmartShare $env:VERSION", '--notes-file', '.github/release-notes.md', '--generate-notes')
+          # What's new (.github/changes/<version>.md, optional), then the download notes, then
+          # the SmartScreen warning while the files are unsigned; --generate-notes adds the changelog link.
+          $parts = @()
+          $changes = ".github/changes/$env:VERSION.md"
+          if (Test-Path $changes) { $parts += (Get-Content $changes -Raw -Encoding utf8).Trim() }
+          $parts += (Get-Content .github/release-notes.md -Raw -Encoding utf8).Trim()
+          if ($env:SIGN -ne 'true') { $parts += (Get-Content .github/release-notes-unsigned.md -Raw -Encoding utf8).Trim() }
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          [IO.File]::WriteAllText($notes, ($parts -join "`n`n") + "`n")
+          $options = @('--title', "OpenVideoSmartShare $env:VERSION", '--notes-file', $notes, '--generate-notes')
           if ($env:VERSION.Contains('-')) { $options += '--prerelease' }
           gh release create $env:TAG @assets @options
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
