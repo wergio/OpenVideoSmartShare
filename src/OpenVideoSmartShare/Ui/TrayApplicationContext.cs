@@ -22,8 +22,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _host = host;
         _mainForm = new MainForm(host);
-        _mainForm.HiddenToTray += (_, _) =>
-            _tray.ShowBalloonTip(3000, AppPaths.AppName, L.T("tray.stillRunning"), ToolTipIcon.Info);
 
         _openItem.Font = new Font(_menu.Font, FontStyle.Bold);
         _openItem.Click += (_, _) => _mainForm.ShowAndActivate();

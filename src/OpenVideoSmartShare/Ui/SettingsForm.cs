@@ -226,6 +226,16 @@ internal sealed class SettingsForm : Form
         _devices.Columns.Add("", 110);
         _devices.Columns.Add("", 110);
         _devices.ItemChecked += (_, e) => OnDeviceChecked(e.Item);
+        _devices.ItemCheck += (_, e) =>
+        {
+            // The native control still toggles an item without check box (space bar).
+            if (!_loadingDevices && _devices.Items[e.Index].Tag is DeviceRule device && !IsTv(device))
+            {
+                e.NewValue = e.CurrentValue;
+            }
+        };
+        // Items get their native check box when the handle is created (the tab is first shown).
+        _devices.HandleCreated += (_, _) => BeginInvoke(HideNonTvCheckBoxes);
         _devices.SelectedIndexChanged += (_, _) => _removeDevice.Enabled = _devices.SelectedItems.Count > 0;
 
         var side = new FlowLayoutPanel { Dock = DockStyle.Right, FlowDirection = FlowDirection.TopDown, AutoSize = true, Padding = new Padding(8, 0, 0, 0) };
@@ -523,10 +533,16 @@ internal sealed class SettingsForm : Form
             _devices.Items.Clear();
             foreach (var device in _edited.Devices.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase))
             {
-                var item = new ListViewItem(device.Name) { Tag = device, Checked = device.Allowed };
+                var isTv = IsTv(device);
+                var item = new ListViewItem(device.Name) { Tag = device, Checked = isTv && device.Allowed };
+                if (!isTv)
+                {
+                    item.ForeColor = SystemColors.GrayText;
+                }
+
                 item.SubItems.Add(device.LastIp ?? "");
                 item.SubItems.Add(device.MacAddress ?? "");
-                item.SubItems.Add(device.Allowed ? L.T("settings.allowed") : L.T("settings.blocked"));
+                item.SubItems.Add(StatusText(device));
                 item.SubItems.Add(PresenceText(device, online));
                 item.ToolTipText = device.LastSeen == default ? "" : device.LastSeen.ToString("g", L.Culture);
                 _devices.Items.Add(item);
@@ -538,24 +554,68 @@ internal sealed class SettingsForm : Form
             _loadingDevices = false;
         }
 
+        HideNonTvCheckBoxes();
         _removeDevice.Enabled = _devices.SelectedItems.Count > 0;
+    }
+
+    /// <summary>
+    /// Devices that are not TVs are always blocked, so they have no check box. Native state:
+    /// only possible once the list has a handle, which gives every new item an empty box.
+    /// </summary>
+    private void HideNonTvCheckBoxes()
+    {
+        if (!_devices.IsHandleCreated)
+        {
+            return;
+        }
+
+        _loadingDevices = true;
+        try
+        {
+            foreach (ListViewItem item in _devices.Items)
+            {
+                if (item.Tag is DeviceRule device && !IsTv(device))
+                {
+                    item.StateImageIndex = -1;
+                }
+            }
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
     }
 
     private void UpdatePresence()
     {
         var online = _host.Renderers.Renderers;
+        var notTv = L.T("settings.notTv");
         foreach (ListViewItem item in _devices.Items)
         {
             if (item.Tag is DeviceRule device)
             {
                 var text = PresenceText(device, online);
-                if (item.SubItems[4].Text != text)
+                if (item.SubItems[4].Text == text)
                 {
-                    item.SubItems[4].Text = text;
+                    continue;
                 }
+
+                if ((item.SubItems[4].Text == notTv) != (text == notTv))
+                {
+                    // A device became a TV (or stopped being one): its check box changes.
+                    ReloadDevices();
+                    return;
+                }
+
+                item.SubItems[4].Text = text;
             }
         }
     }
+
+    private bool IsTv(DeviceRule device) => DeviceAccess.IsTv(device, _host.Renderers.Renderers, _edited.Devices);
+
+    private string StatusText(DeviceRule device) =>
+        L.T(device.Allowed && IsTv(device) ? "settings.allowed" : "settings.blocked");
 
     /// <summary>Present or not for TVs; devices that only browse the server are not TVs.</summary>
     private string PresenceText(DeviceRule device, IReadOnlyList<RendererInfo> online) =>
@@ -564,19 +624,20 @@ internal sealed class SettingsForm : Form
 
     private void OnDeviceChecked(ListViewItem item)
     {
-        if (_loadingDevices || item.Tag is not DeviceRule device || device.Allowed == item.Checked)
+        if (_loadingDevices || item.Tag is not DeviceRule device || device.Allowed == item.Checked || !IsTv(device))
         {
             return;
         }
 
         device.Allowed = item.Checked;
-        item.SubItems[3].Text = device.Allowed ? L.T("settings.allowed") : L.T("settings.blocked");
+        item.SubItems[3].Text = StatusText(device);
         ReloadDefaultTvOptions();
     }
 
     private void SetAllDevices(bool allowed)
     {
-        foreach (var device in _edited.Devices)
+        // Only TVs have a choice: the others keep theirs for when they turn out to be a TV.
+        foreach (var device in _edited.Devices.Where(IsTv))
         {
             device.Allowed = allowed;
         }

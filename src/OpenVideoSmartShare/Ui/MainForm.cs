@@ -94,7 +94,6 @@ internal sealed class MainForm : Form
     private int? _volumeSent;
     private bool? _muted;
     private string? _lastActivity;
-    private bool _balloonShown;
 
     public MainForm(AppHost host)
     {
@@ -192,12 +191,16 @@ internal sealed class MainForm : Form
         _transportTimer.Start();
     }
 
-    /// <summary>Shows the window (restoring it if minimized) and brings it to the front.</summary>
+    /// <summary>
+    /// Shows the window (restoring it if minimized) and brings it to the front. Coming back from
+    /// the tray rescans the folders, as files may have changed while the window was hidden.
+    /// </summary>
     public void ShowAndActivate()
     {
         if (!Visible)
         {
             Show();
+            _ = RefreshAsync();
         }
 
         if (WindowState == FormWindowState.Minimized)
@@ -217,12 +220,6 @@ internal sealed class MainForm : Form
             // The window only hides: the server keeps running in the tray.
             e.Cancel = true;
             Hide();
-            if (!_balloonShown && Owner == null)
-            {
-                _balloonShown = true;
-                HiddenToTray?.Invoke(this, EventArgs.Empty);
-            }
-
             return;
         }
 
@@ -262,9 +259,6 @@ internal sealed class MainForm : Form
 
         return base.ProcessCmdKey(ref msg, keyData);
     }
-
-    /// <summary>Raised the first time the window is closed to the tray.</summary>
-    public event EventHandler? HiddenToTray;
 
     /// <summary>Tool strip hosted controls are not auto-scaled, so their widths follow the DPI here.</summary>
     private void ApplyDpiSizes()

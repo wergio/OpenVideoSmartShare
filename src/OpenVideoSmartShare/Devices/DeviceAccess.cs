@@ -7,7 +7,8 @@ namespace OpenVideoSmartShare.Devices;
 
 /// <summary>
 /// "Allow/Block other devices": devices are identified by MAC address (resolved through ARP)
-/// so that a DHCP address change keeps the rule. New devices are allowed.
+/// so that a DHCP address change keeps the rule. Only TVs can be allowed: new TVs are, devices
+/// that were never seen as a renderer are always refused.
 /// </summary>
 internal sealed class DeviceAccess
 {
@@ -34,7 +35,9 @@ internal sealed class DeviceAccess
             return true;
         }
 
-        return Observe(address, nameHint, preferName: false).Allowed;
+        // Allowed stays true on new devices, so a device found to be a TV later is allowed then.
+        var rule = Observe(address, nameHint, preferName: false);
+        return rule.Allowed && rule.RendererUdn != null;
     }
 
     /// <summary>

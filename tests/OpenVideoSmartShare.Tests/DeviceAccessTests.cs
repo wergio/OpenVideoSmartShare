@@ -43,6 +43,23 @@ public sealed class DeviceAccessTests : IDisposable
     }
 
     [Fact]
+    public void DevicesAreRefusedUntilSeenAsTv()
+    {
+        var store = new SettingsStore(Path.Combine(_folder, "settings.json"));
+        var access = new DeviceAccess(store);
+        // A documentation address: never the local machine, and keyed by address (no ARP on IPv6).
+        var address = IPAddress.Parse("2001:db8::50");
+
+        Assert.False(access.IsAllowed(address, "Phone"));
+
+        access.Observe(address, "Living room", preferName: true, "uuid:tv");
+        Assert.True(access.IsAllowed(address, "Living room"));
+
+        store.Update(s => s.Devices[0].Allowed = false, notify: false);
+        Assert.False(access.IsAllowed(address, "Living room"));
+    }
+
+    [Fact]
     public void PlayTargetsSkipBlockedTvsAndKeepAllowedOfflineOnes()
     {
         var online = new[] { Renderer("uuid:lg", "LG", "192.168.1.142"), Renderer("uuid:samsung", "Samsung", "192.168.1.141"), Renderer("uuid:new", "New", "192.168.1.150") };
